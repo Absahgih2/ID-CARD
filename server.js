@@ -5,9 +5,12 @@ const fs = require('fs');
 const cors = require('cors');
 const XLSX = require('xlsx');
 const JSZip = require('jszip');
+const cron = require('node-cron');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || 'printdigi001@gmail.com';
 
 // Directories
 const dataDir = path.join(__dirname, 'data');
@@ -38,9 +41,9 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    const sanitizeName = (req.body.studentName || 'student').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const sanitizeClass = (req.body.className || 'class').replace(/[^a-zA-Z0-9_-]/g, '_');
-    cb(null, `photo_${sanitizeClass}_${sanitizeName}_${Date.now()}${ext}`);
+    const sanitizeName = (req.body.studentName || 'STUDENT').toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+    const sanitizeClass = (req.body.className || 'CLASS').toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+    cb(null, `PHOTO_${sanitizeClass}_${sanitizeName}_${Date.now()}${ext}`);
   }
 });
 
@@ -57,7 +60,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from 'public' folder and root
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads/photos', express.static(uploadsDir));
 
@@ -82,7 +84,110 @@ app.get('/api/notifications/stream', (req, res) => {
   });
 });
 
-// API Routes
+// --- DAILY 4:00 PM EMAIL SUMMARY ENGINE ---
+
+async function sendDailySummaryEmail() {
+  const db = readDB();
+  const students = db.students || [];
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStudents = students.filter(s => {
+    const sDate = new Date(s.submittedAt).toISOString().split('T')[0];
+    return sDate === todayStr;
+  });
+
+  const count = todayStudents.length;
+
+  console.log(`[Cron 4:00 PM] Daily email check: ${count} student submission(s) today.`);
+
+  // Prepare Class Breakdown
+  const classBreakdown = {};
+  todayStudents.forEach(s => {
+    classBreakdown[s.className] = (classBreakdown[s.className] || 0) + 1;
+  });
+
+  const classRows = Object.keys(classBreakdown).map(cls => `
+    <tr>
+      <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Class ${cls}</td>
+      <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${classBreakdown[cls]} Students</td>
+    </tr>
+  `).join('');
+
+  const emailHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+      <h2 style="color: #4f46e5; margin-bottom: 5px;">📊 Daily Student ID Card Submission Report</h2>
+      <p style="color: #64748b; font-size: 0.9rem; margin-top: 0;">Date: <strong>${new Date().toLocaleDateString()}</strong> | Scheduled 4:00 PM Report</p>
+      
+      <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        <h3 style="margin: 0; color: #0f172a;">Total Submissions Today: <span style="color: #10b981; font-size: 1.5rem;">${count}</span></h3>
+      </div>
+
+      ${count > 0 ? `
+        <h4 style="color: #334155;">Class-wise Breakdown:</h4>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background: #e2e8f0;">
+              <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: left;">Class</th>
+              <th style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">Submissions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${classRows}
+          </tbody>
+        </table>
+      ` : '<p style="color: #94a3b8;">No new student submissions recorded today.</p>'}
+
+      <div style="margin-top: 25px; text-align: center;">
+        <a href="https://id-card-bkgx.onrender.com/admin.html" style="background: #4f46e5; color: #fff; text-decoration: none; padding: 12px 25px; border-radius: 6px; font-weight: bold; display: inline-block;">
+          Open Admin Panel to Download Excel & Photos ➔
+        </a>
+      </div>
+    </div>
+  `;
+
+  // Configure Nodemailer Transporter
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
+
+  if (emailUser && emailPass) {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: emailUser, pass: emailPass }
+    });
+
+    try {
+      await transporter.sendMail({
+        from: `"ID Card Collector" <${emailUser}>`,
+        to: NOTIFY_EMAIL,
+        subject: `📊 Daily ID Card Report: ${count} Submission(s) Today (${new Date().toLocaleDateString()})`,
+        html: emailHtml
+      });
+      console.log(`✅ Daily 4:00 PM report email successfully sent to ${NOTIFY_EMAIL}!`);
+      return { success: true, message: `Email sent to ${NOTIFY_EMAIL}` };
+    } catch (err) {
+      console.error(`❌ Error sending daily email:`, err.message);
+      return { success: false, error: err.message };
+    }
+  } else {
+    console.log(`ℹ️ Email SMTP credentials not configured. Set EMAIL_USER & EMAIL_PASS in environment to deliver live emails to ${NOTIFY_EMAIL}.`);
+    return { success: true, message: `Report generated for ${count} student(s) today. Set EMAIL_USER & EMAIL_PASS for live SMTP delivery.` };
+  }
+}
+
+// Schedule Cron Job: Everyday at 4:00 PM (16:00)
+cron.schedule('0 16 * * *', () => {
+  console.log('⏰ Executing 4:00 PM Daily Email Summary Cron Job...');
+  sendDailySummaryEmail();
+});
+
+// API Endpoint to Trigger Email Test Manually
+app.post('/api/notifications/send-daily-email', async (req, res) => {
+  const result = await sendDailySummaryEmail();
+  res.json(result);
+});
+
+// --- OTHER API ROUTES ---
+
 app.get('/api/students', (req, res) => {
   const db = readDB();
   const students = db.students || [];
@@ -115,14 +220,14 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
 
     const studentRecord = {
       id: `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      studentName: studentName.trim(),
-      className: className.trim(),
-      dob: dob.trim(),
-      fatherName: fatherName.trim(),
-      contact1: contact1.trim(),
-      contact2: contact2.trim(),
-      contact3: contact3 ? contact3.trim() : '',
-      address: address.trim(),
+      studentName: studentName.trim().toUpperCase(),
+      className: className.trim().toUpperCase(),
+      dob: dob.trim().toUpperCase(),
+      fatherName: fatherName.trim().toUpperCase(),
+      contact1: contact1.trim().toUpperCase(),
+      contact2: contact2.trim().toUpperCase(),
+      contact3: contact3 ? contact3.trim().toUpperCase() : '',
+      address: address.trim().toUpperCase(),
       photoFilename,
       photoPath,
       localFolderLocation: fullLocalPhotoPath,
@@ -139,7 +244,7 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
 
     broadcastSSE({
       type: 'NEW_SUBMISSION',
-      message: `New student registration: ${studentRecord.studentName} (${studentRecord.className})`,
+      message: `NEW STUDENT REGISTRATION: ${studentRecord.studentName} (${studentRecord.className})`,
       student: studentRecord,
       summary: {
         total: db.students.length,
@@ -376,30 +481,24 @@ app.get('/api/export/photos-zip', async (req, res) => {
   }
 });
 
-// Serve HTML pages explicitly
+// Explicit HTML Page Fallbacks
 app.get('/admin*', (req, res) => {
   const adminPath = path.join(__dirname, 'public', 'admin.html');
-  if (fs.existsSync(adminPath)) {
-    res.sendFile(adminPath);
-  } else {
-    res.sendFile(path.join(__dirname, 'admin.html'));
-  }
+  if (fs.existsSync(adminPath)) res.sendFile(adminPath);
+  else res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
 app.get('*', (req, res) => {
   const indexPath = path.join(__dirname, 'public', 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.sendFile(path.join(__dirname, 'index.html'));
-  }
+  if (fs.existsSync(indexPath)) res.sendFile(indexPath);
+  else res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`===================================================`);
   console.log(`🚀 ID Card Data Collector Server running on port ${PORT}!`);
+  console.log(`📧 Daily 4:00 PM Email Alert recipient: ${NOTIFY_EMAIL}`);
   console.log(`📌 Public Student Form:  http://localhost:${PORT}/`);
   console.log(`📌 Admin Dashboard:       http://localhost:${PORT}/admin.html`);
-  console.log(`📁 Local Photos Directory: ${uploadsDir}`);
   console.log(`===================================================`);
 });

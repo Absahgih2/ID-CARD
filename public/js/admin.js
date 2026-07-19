@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const ADMIN_PASS = 'loveyourself'; // Updated Admin Password
+  const ADMIN_PASS = 'loveyourself';
 
   const loginModal = document.getElementById('loginModal');
   const loginForm = document.getElementById('loginForm');
@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportExcelBtn = document.getElementById('exportExcelBtn');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const exportZipBtn = document.getElementById('exportZipBtn');
+    const triggerEmailBtn = document.getElementById('triggerEmailBtn');
     const lateBanner = document.getElementById('lateBanner');
     const lateBannerText = document.getElementById('lateBannerText');
     const filterLateBtn = document.getElementById('filterLateBtn');
@@ -312,6 +313,24 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Failed to clear data.');
       }
     });
+
+    // Send Daily Email Trigger
+    if (triggerEmailBtn) {
+      triggerEmailBtn.addEventListener('click', async () => {
+        triggerEmailBtn.disabled = true;
+        triggerEmailBtn.innerText = 'Sending Email...';
+        try {
+          const res = await fetch('/api/notifications/send-daily-email', { method: 'POST' });
+          const data = await res.json();
+          showToast(data.message || 'Daily summary report triggered!', 'Daily Email Alert');
+        } catch (err) {
+          showToast('Triggered daily report check.', 'Email Alert');
+        } finally {
+          triggerEmailBtn.disabled = false;
+          triggerEmailBtn.innerText = 'Send 4 PM Email Now ➔';
+        }
+      });
+    }
 
     exportExcelBtn.addEventListener('click', () => {
       window.location.href = `/api/export/excel?status=${currentFilter === 'Late' ? 'Pending' : currentFilter}`;

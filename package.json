@@ -1,7 +1,7 @@
 {
   "name": "id-card-data-collector",
   "version": "1.0.0",
-  "description": "Student Data & Photo Collector with Batch Status Tracking, Excel/CSV Export, Bulk Delete, and Notifications",
+  "description": "Student Data & Photo Collector with Batch Status Tracking, Excel/CSV Export, Daily 4 PM Email Alerts, and Notifications",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,6 +13,8 @@
     "jszip": "^3.10.1",
     "localtunnel": "^2.0.2",
     "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.14",
     "xlsx": "^0.18.5"
   }
 }

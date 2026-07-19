@@ -8,7 +8,7 @@
 </head>
 <body>
 
-  <!-- Clean Student Navigation Bar (No Admin Link for Students) -->
+  <!-- Clean Student Navigation Bar -->
   <nav class="navbar">
     <div class="brand">
       <span>🪪</span> Student ID Card Registration Portal
@@ -28,30 +28,30 @@
         <!-- 1. Student Name -->
         <div class="form-group">
           <label for="studentName">1. Student Name <span style="color: var(--accent-danger);">*</span></label>
-          <input type="text" id="studentName" name="studentName" class="form-input" placeholder="Enter student full name" required>
+          <input type="text" id="studentName" name="studentName" class="form-input" placeholder="e.g. JOHN DOE" required>
           <small class="error-msg" id="err-studentName" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Student Name is required.</small>
         </div>
 
-        <!-- 2. Class Selection -->
+        <!-- 2. Class Selection (Roman Numbers without 'Class ') -->
         <div class="form-group">
           <label for="className">2. Class <span style="color: var(--accent-danger);">*</span></label>
           <select id="className" name="className" class="form-select" required>
-            <option value="">Select Class...</option>
+            <option value="">SELECT CLASS...</option>
             <option value="NUR">NUR</option>
             <option value="LKG">LKG</option>
             <option value="UKG">UKG</option>
-            <option value="Class I">Class I</option>
-            <option value="Class II">Class II</option>
-            <option value="Class III">Class III</option>
-            <option value="Class IV">Class IV</option>
-            <option value="Class V">Class V</option>
-            <option value="Class VI">Class VI</option>
-            <option value="Class VII">Class VII</option>
-            <option value="Class VIII">Class VIII</option>
-            <option value="Class IX">Class IX</option>
-            <option value="Class X">Class X</option>
-            <option value="Class XI">Class XI</option>
-            <option value="Class XII">Class XII</option>
+            <option value="I">I</option>
+            <option value="II">II</option>
+            <option value="III">III</option>
+            <option value="IV">IV</option>
+            <option value="V">V</option>
+            <option value="VI">VI</option>
+            <option value="VII">VII</option>
+            <option value="VIII">VIII</option>
+            <option value="IX">IX</option>
+            <option value="X">X</option>
+            <option value="XI">XI</option>
+            <option value="XII">XII</option>
           </select>
           <small class="error-msg" id="err-className" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Please select a class.</small>
         </div>
@@ -66,17 +66,17 @@
         <!-- 4. Father Name -->
         <div class="form-group">
           <label for="fatherName">4. Father Name <span style="color: var(--accent-danger);">*</span></label>
-          <input type="text" id="fatherName" name="fatherName" class="form-input" placeholder="Enter father's full name" required>
+          <input type="text" id="fatherName" name="fatherName" class="form-input" placeholder="e.g. ROBERT DOE" required>
           <small class="error-msg" id="err-fatherName" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Father Name is required.</small>
         </div>
 
-        <!-- 5. Contact Numbers (2 to 3 Mobile Numbers) -->
+        <!-- 5. Contact Numbers -->
         <div class="form-group full-width">
           <label>5. Contact Numbers (Enter 2 to 3 Mobile Numbers) <span style="color: var(--accent-danger);">*</span></label>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-            <input type="tel" id="contact1" name="contact1" class="form-input" placeholder="Primary Mobile Number *" required>
-            <input type="tel" id="contact2" name="contact2" class="form-input" placeholder="Secondary Mobile Number *" required>
-            <input type="tel" id="contact3" name="contact3" class="form-input" placeholder="Optional 3rd Mobile Number">
+            <input type="tel" id="contact1" name="contact1" class="form-input" placeholder="PRIMARY MOBILE *" required>
+            <input type="tel" id="contact2" name="contact2" class="form-input" placeholder="SECONDARY MOBILE *" required>
+            <input type="tel" id="contact3" name="contact3" class="form-input" placeholder="OPTIONAL 3RD MOBILE">
           </div>
           <small class="error-msg" id="err-contact" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">At least two mobile contact numbers are required.</small>
         </div>
@@ -84,7 +84,7 @@
         <!-- 6. Address -->
         <div class="form-group full-width">
           <label for="address">6. Full Residential Address <span style="color: var(--accent-danger);">*</span></label>
-          <textarea id="address" name="address" class="form-input" rows="3" placeholder="House No, Street, Landmark, City, Pincode" required></textarea>
+          <textarea id="address" name="address" class="form-input" rows="3" placeholder="HOUSE NO, STREET, LANDMARK, CITY, PINCODE" required></textarea>
           <small class="error-msg" id="err-address" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Full Address is required.</small>
         </div>
 
@@ -95,7 +95,7 @@
             <input type="file" id="photo" name="photo" accept="image/*" style="display: none;" required>
             <div id="dropText">
               <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">📸</span>
-              <p style="font-weight: 600; font-size: 1rem; color: #fff;">Click or Drag & Drop Photo Here <span style="color: var(--accent-danger);">*</span></p>
+              <p style="font-weight: 600; font-size: 1rem; color: #fff;">CLICK OR DRAG & DROP PHOTO HERE <span style="color: var(--accent-danger);">*</span></p>
               <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Supports JPG, PNG, WEBP (Max size: 10MB)</p>
             </div>
             <img id="photoPreview" class="photo-preview" alt="Student Photo Preview">
@@ -106,7 +106,7 @@
         <!-- Submit Button -->
         <div class="full-width" style="margin-top: 1rem;">
           <button type="submit" id="submitBtn" class="submit-btn">
-            <span>Submit Registration Details</span>
+            <span>SUBMIT REGISTRATION DETAILS</span>
             <span>➔</span>
           </button>
         </div>
