@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Convert text input values to uppercase as user types
-  const uppercaseInputs = ['studentName', 'fatherName', 'address', 'contact1', 'contact2', 'contact3'];
+  const uppercaseInputs = ['studentName', 'fatherName', 'address', 'contact1', 'contact2'];
   uppercaseInputs.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsDataURL(file);
   }
 
-  // Handle Form Submission with STRICT VALIDATION & UPPERCASE ENFORCEMENT
+  // Handle Form Submission with STRICT VALIDATION
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -135,15 +135,13 @@ document.addEventListener('DOMContentLoaded', () => {
       missingFields.push('4. FATHER NAME');
     }
 
-    // 5. Contact Numbers
+    // 5. Contact Numbers (Only Contact 1 Mandatory)
     const contact1 = document.getElementById('contact1');
-    const contact2 = document.getElementById('contact2');
-    if (!contact1.value.trim() || !contact2.value.trim()) {
+    if (!contact1.value.trim()) {
       isValid = false;
-      if (!contact1.value.trim()) contact1.style.borderColor = '#ef4444';
-      if (!contact2.value.trim()) contact2.style.borderColor = '#ef4444';
+      contact1.style.borderColor = '#ef4444';
       document.getElementById('err-contact').style.display = 'block';
-      missingFields.push('5. AT LEAST 2 MOBILE CONTACT NUMBERS');
+      missingFields.push('5. PRIMARY MOBILE NUMBER');
     }
 
     // 6. Address

@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
           statusLabel = 'Late Update 🚨';
         }
 
-        const contacts = [s.contact1, s.contact2, s.contact3].filter(Boolean).join(' / ');
+        const contacts = [s.contact1, s.contact2].filter(Boolean).join(' / ');
 
         return `
           <tr>
@@ -314,7 +314,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Send Daily Email Trigger
     if (triggerEmailBtn) {
       triggerEmailBtn.addEventListener('click', async () => {
         triggerEmailBtn.disabled = true;

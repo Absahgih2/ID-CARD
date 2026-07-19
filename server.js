@@ -85,7 +85,6 @@ app.get('/api/notifications/stream', (req, res) => {
 });
 
 // --- DAILY 4:00 PM EMAIL SUMMARY ENGINE ---
-
 async function sendDailySummaryEmail() {
   const db = readDB();
   const students = db.students || [];
@@ -100,7 +99,6 @@ async function sendDailySummaryEmail() {
 
   console.log(`[Cron 4:00 PM] Daily email check: ${count} student submission(s) today.`);
 
-  // Prepare Class Breakdown
   const classBreakdown = {};
   todayStudents.forEach(s => {
     classBreakdown[s.className] = (classBreakdown[s.className] || 0) + 1;
@@ -145,7 +143,6 @@ async function sendDailySummaryEmail() {
     </div>
   `;
 
-  // Configure Nodemailer Transporter
   const emailUser = process.env.EMAIL_USER;
   const emailPass = process.env.EMAIL_PASS;
 
@@ -174,20 +171,17 @@ async function sendDailySummaryEmail() {
   }
 }
 
-// Schedule Cron Job: Everyday at 4:00 PM (16:00)
 cron.schedule('0 16 * * *', () => {
   console.log('⏰ Executing 4:00 PM Daily Email Summary Cron Job...');
   sendDailySummaryEmail();
 });
 
-// API Endpoint to Trigger Email Test Manually
 app.post('/api/notifications/send-daily-email', async (req, res) => {
   const result = await sendDailySummaryEmail();
   res.json(result);
 });
 
-// --- OTHER API ROUTES ---
-
+// API Routes
 app.get('/api/students', (req, res) => {
   const db = readDB();
   const students = db.students || [];
@@ -205,12 +199,13 @@ app.get('/api/students', (req, res) => {
   });
 });
 
+// Submit Form (Contact 1 Mandatory, Contact 2 Optional)
 app.post('/api/students/submit', upload.single('photo'), (req, res) => {
   try {
-    const { studentName, className, dob, fatherName, contact1, contact2, contact3, address } = req.body;
+    const { studentName, className, dob, fatherName, contact1, contact2, address } = req.body;
 
-    if (!studentName || !className || !dob || !fatherName || !contact1 || !contact2 || !address || !req.file) {
-      return res.status(400).json({ error: 'All 7 mandatory fields are required!' });
+    if (!studentName || !className || !dob || !fatherName || !contact1 || !address || !req.file) {
+      return res.status(400).json({ error: 'Student Name, Class, DOB, Father Name, Primary Contact, Address, and Photo are mandatory!' });
     }
 
     const db = readDB();
@@ -225,8 +220,7 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
       dob: dob.trim().toUpperCase(),
       fatherName: fatherName.trim().toUpperCase(),
       contact1: contact1.trim().toUpperCase(),
-      contact2: contact2.trim().toUpperCase(),
-      contact3: contact3 ? contact3.trim().toUpperCase() : '',
+      contact2: contact2 ? contact2.trim().toUpperCase() : '',
       address: address.trim().toUpperCase(),
       photoFilename,
       photoPath,
@@ -379,9 +373,8 @@ app.get('/api/export/excel', (req, res) => {
     'Class': s.className,
     'Date of Birth (DD.MM.YYYY)': s.dob,
     'Father Name': s.fatherName,
-    'Contact 1': s.contact1,
-    'Contact 2': s.contact2,
-    'Contact 3': s.contact3 || '',
+    'Contact 1 (Primary)': s.contact1,
+    'Contact 2 (Optional)': s.contact2 || '',
     'Address': s.address,
     'Status': s.status,
     'Submission Time': new Date(s.submittedAt).toLocaleString(),
@@ -395,7 +388,7 @@ app.get('/api/export/excel', (req, res) => {
 
   worksheet['!cols'] = [
     { wch: 6 },  { wch: 25 }, { wch: 12 }, { wch: 18 }, { wch: 25 },
-    { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 35 }, { wch: 14 },
+    { wch: 18 }, { wch: 18 }, { wch: 35 }, { wch: 14 },
     { wch: 22 }, { wch: 35 }, { wch: 55 }
   ];
 
@@ -418,7 +411,7 @@ app.get('/api/export/csv', (req, res) => {
 
   const headers = [
     'S.No', 'Student Name', 'Class', 'Date of Birth', 'Father Name',
-    'Contact 1', 'Contact 2', 'Contact 3', 'Address', 'Status',
+    'Contact 1 (Primary)', 'Contact 2 (Optional)', 'Address', 'Status',
     'Submission Time', 'Photo File Name', 'Local Photo Path'
   ];
 
@@ -430,7 +423,7 @@ app.get('/api/export/csv', (req, res) => {
 
   const rows = list.map((s, idx) => [
     idx + 1, s.studentName, s.className, s.dob, s.fatherName,
-    s.contact1, s.contact2, s.contact3 || '', s.address, s.status,
+    s.contact1, s.contact2 || '', s.address, s.status,
     new Date(s.submittedAt).toLocaleString(), s.photoFilename, s.localFolderLocation
   ].map(escapeCSV).join(','));
 

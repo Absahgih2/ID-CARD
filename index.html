@@ -66,13 +66,12 @@
         </div>
 
         <div class="form-group full-width">
-          <label>5. Contact Numbers (Enter 2 to 3 Mobile Numbers) <span style="color: var(--accent-danger);">*</span></label>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-            <input type="tel" id="contact1" name="contact1" class="form-input" placeholder="PRIMARY MOBILE *" required>
-            <input type="tel" id="contact2" name="contact2" class="form-input" placeholder="SECONDARY MOBILE *" required>
-            <input type="tel" id="contact3" name="contact3" class="form-input" placeholder="OPTIONAL 3RD MOBILE">
+          <label>5. Contact Mobile Numbers (1st Number Mandatory) <span style="color: var(--accent-danger);">*</span></label>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+            <input type="tel" id="contact1" name="contact1" class="form-input" placeholder="PRIMARY MOBILE NUMBER *" required>
+            <input type="tel" id="contact2" name="contact2" class="form-input" placeholder="SECONDARY MOBILE NUMBER (OPTIONAL)">
           </div>
-          <small class="error-msg" id="err-contact" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">At least two mobile contact numbers are required.</small>
+          <small class="error-msg" id="err-contact" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Primary Mobile Number is required.</small>
         </div>
 
         <div class="form-group full-width">
