@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const ADMIN_PASS = 'admin123';
+  const ADMIN_PASS = 'loveyourself'; // Updated Admin Password
 
   const loginModal = document.getElementById('loginModal');
   const loginForm = document.getElementById('loginForm');
@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
       unlockDashboard();
     } else {
       loginError.style.display = 'block';
-      loginError.textContent = '❌ Invalid Admin Password. (Default: admin123)';
+      loginError.textContent = '❌ Invalid Admin Password.';
     }
   });
 
@@ -227,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Select All Checkbox Handler
     selectAllCheckbox.addEventListener('change', (e) => {
       let filtered = allStudents;
       if (currentFilter === 'Pending') filtered = allStudents.filter(s => s.status === 'Pending');
@@ -253,7 +252,6 @@ document.addEventListener('DOMContentLoaded', () => {
       renderTable();
     });
 
-    // Mark Batch as Generated
     markBatchBtn.addEventListener('click', async () => {
       if (!selectedStudentIds.size) return;
       const ids = Array.from(selectedStudentIds);
@@ -275,7 +273,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Delete Selected Students
     deleteBatchBtn.addEventListener('click', async () => {
       if (!selectedStudentIds.size) return;
       if (!confirm(`Are you sure you want to delete ${selectedStudentIds.size} selected student record(s) and their photos?`)) return;
@@ -299,7 +296,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Clear ALL Data (Delete prefilled test data)
     clearAllBtn.addEventListener('click', async () => {
       if (!confirm('⚠️ WARNING: This will permanently delete ALL student entries and photos! Are you sure you want to clear prefilled test data?')) return;
 
