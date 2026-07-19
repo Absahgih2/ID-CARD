@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student ID Card Data Registration Form</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- Clean Student Navigation Bar (No Admin Link for Students) -->
+  <nav class="navbar">
+    <div class="brand">
+      <span>🪪</span> Student ID Card Registration Portal
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="container">
+    <div class="glass-card">
+      <h1 class="page-title">Student Details & Photo Submission</h1>
+      <p class="page-subtitle">Please complete all 7 required fields. All fields marked with (<span style="color: var(--accent-danger);">*</span>) are mandatory.</p>
+
+      <div id="alertBox" style="display: none; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 600;"></div>
+
+      <form id="studentForm" class="form-grid" novalidate>
+        
+        <!-- 1. Student Name -->
+        <div class="form-group">
+          <label for="studentName">1. Student Name <span style="color: var(--accent-danger);">*</span></label>
+          <input type="text" id="studentName" name="studentName" class="form-input" placeholder="Enter student full name" required>
+          <small class="error-msg" id="err-studentName" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Student Name is required.</small>
+        </div>
+
+        <!-- 2. Class Selection -->
+        <div class="form-group">
+          <label for="className">2. Class <span style="color: var(--accent-danger);">*</span></label>
+          <select id="className" name="className" class="form-select" required>
+            <option value="">Select Class...</option>
+            <option value="NUR">NUR</option>
+            <option value="LKG">LKG</option>
+            <option value="UKG">UKG</option>
+            <option value="Class I">Class I</option>
+            <option value="Class II">Class II</option>
+            <option value="Class III">Class III</option>
+            <option value="Class IV">Class IV</option>
+            <option value="Class V">Class V</option>
+            <option value="Class VI">Class VI</option>
+            <option value="Class VII">Class VII</option>
+            <option value="Class VIII">Class VIII</option>
+            <option value="Class IX">Class IX</option>
+            <option value="Class X">Class X</option>
+            <option value="Class XI">Class XI</option>
+            <option value="Class XII">Class XII</option>
+          </select>
+          <small class="error-msg" id="err-className" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Please select a class.</small>
+        </div>
+
+        <!-- 3. Date of Birth (DD.MM.YYYY) -->
+        <div class="form-group">
+          <label for="dob">3. Date of Birth (DD.MM.YYYY) <span style="color: var(--accent-danger);">*</span></label>
+          <input type="text" id="dob" name="dob" class="form-input" placeholder="e.g. 15.08.2012" maxlength="10" required>
+          <small class="error-msg" id="err-dob" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Date of birth in DD.MM.YYYY format is required.</small>
+        </div>
+
+        <!-- 4. Father Name -->
+        <div class="form-group">
+          <label for="fatherName">4. Father Name <span style="color: var(--accent-danger);">*</span></label>
+          <input type="text" id="fatherName" name="fatherName" class="form-input" placeholder="Enter father's full name" required>
+          <small class="error-msg" id="err-fatherName" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Father Name is required.</small>
+        </div>
+
+        <!-- 5. Contact Numbers (2 to 3 Mobile Numbers) -->
+        <div class="form-group full-width">
+          <label>5. Contact Numbers (Enter 2 to 3 Mobile Numbers) <span style="color: var(--accent-danger);">*</span></label>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+            <input type="tel" id="contact1" name="contact1" class="form-input" placeholder="Primary Mobile Number *" required>
+            <input type="tel" id="contact2" name="contact2" class="form-input" placeholder="Secondary Mobile Number *" required>
+            <input type="tel" id="contact3" name="contact3" class="form-input" placeholder="Optional 3rd Mobile Number">
+          </div>
+          <small class="error-msg" id="err-contact" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">At least two mobile contact numbers are required.</small>
+        </div>
+
+        <!-- 6. Address -->
+        <div class="form-group full-width">
+          <label for="address">6. Full Residential Address <span style="color: var(--accent-danger);">*</span></label>
+          <textarea id="address" name="address" class="form-input" rows="3" placeholder="House No, Street, Landmark, City, Pincode" required></textarea>
+          <small class="error-msg" id="err-address" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Full Address is required.</small>
+        </div>
+
+        <!-- 7. Passport Size Photo -->
+        <div class="form-group full-width">
+          <label>7. Upload Passport Size Photo <span style="color: var(--accent-danger);">*</span></label>
+          <div class="photo-upload-area" id="dropZone">
+            <input type="file" id="photo" name="photo" accept="image/*" style="display: none;" required>
+            <div id="dropText">
+              <span style="font-size: 2.5rem; display: block; margin-bottom: 0.5rem;">📸</span>
+              <p style="font-weight: 600; font-size: 1rem; color: #fff;">Click or Drag & Drop Photo Here <span style="color: var(--accent-danger);">*</span></p>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Supports JPG, PNG, WEBP (Max size: 10MB)</p>
+            </div>
+            <img id="photoPreview" class="photo-preview" alt="Student Photo Preview">
+          </div>
+          <small class="error-msg" id="err-photo" style="color: #f87171; display: none; margin-top: 4px; font-size: 0.8rem;">Student Passport Photo is required.</small>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="full-width" style="margin-top: 1rem;">
+          <button type="submit" id="submitBtn" class="submit-btn">
+            <span>Submit Registration Details</span>
+            <span>➔</span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    ID Card Student Registration Portal &bull; All fields mandatory
+  </footer>
+
+  <script src="js/student.js"></script>
+</body>
+</html>

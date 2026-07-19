@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - ID Card Data & Batch Manager</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    .login-modal {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(16px);
+      display: flex; align-items: center; justify-content: center; z-index: 9999;
+    }
+    .login-box {
+      background: var(--bg-card); border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg); padding: 2.5rem; width: 100%; max-width: 400px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6); text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Admin Password Login Modal -->
+  <div id="loginModal" class="login-modal">
+    <div class="login-box">
+      <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔒</div>
+      <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; color: #fff; margin-bottom: 0.5rem;">Admin Login</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">Enter Admin Password to view student data, delete prefilled entries, and download Excel/CSV files.</p>
+      
+      <div id="loginError" style="display: none; color: #f87171; font-size: 0.85rem; margin-bottom: 1rem; background: rgba(239,68,68,0.15); padding: 0.5rem; border-radius: 6px;"></div>
+
+      <form id="loginForm">
+        <div class="form-group" style="margin-bottom: 1.2rem;">
+          <input type="password" id="adminPassword" class="form-input" placeholder="Password (Default: admin123)" required autofocus style="text-align: center; letter-spacing: 2px;">
+        </div>
+        <button type="submit" class="submit-btn" style="padding: 0.8rem;">
+          <span>Unlock Admin Panel</span> <span>➔</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard Navigation Bar -->
+  <nav class="navbar">
+    <div class="brand">
+      <span>🪪</span> Admin Dashboard & Data Manager
+    </div>
+    <div class="nav-links">
+      <button id="logoutBtn" class="nav-btn" style="background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.3); cursor: pointer;">
+        Logout 🔒
+      </button>
+    </div>
+  </nav>
+
+  <!-- Container -->
+  <main class="container" id="adminContent" style="display: none;">
+
+    <!-- Late Submissions Alert Banner -->
+    <div id="lateBanner" class="notification-banner" style="display: none;">
+      <div class="banner-text">
+        <span style="font-size: 1.5rem;">🔔</span>
+        <span id="lateBannerText">Notice: New student submissions recorded since your last batch!</span>
+      </div>
+      <button id="filterLateBtn" class="btn btn-success" style="font-size: 0.8rem;">
+        View Late Submissions ➔
+      </button>
+    </div>
+
+    <!-- Metrics Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon total">👥</div>
+        <div>
+          <div class="stat-val" id="statTotal">0</div>
+          <div class="stat-lbl">Total Students</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon generated">✅</div>
+        <div>
+          <div class="stat-val" id="statGenerated">0</div>
+          <div class="stat-lbl">ID Cards Generated</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon pending">⏳</div>
+        <div>
+          <div class="stat-val" id="statPending">0</div>
+          <div class="stat-lbl">Pending ID Cards</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon late">🚨</div>
+        <div>
+          <div class="stat-val" id="statLate">0</div>
+          <div class="stat-lbl">Late Submissions</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Glass Card Table Container -->
+    <div class="glass-card">
+
+      <!-- Table Toolbar -->
+      <div class="toolbar">
+
+        <!-- Status Filter Tabs -->
+        <div class="tab-group">
+          <button class="tab-btn active" data-filter="All">All Students</button>
+          <button class="tab-btn" data-filter="Pending">Pending (<span id="tabPendingCount">0</span>)</button>
+          <button class="tab-btn" data-filter="Generated">Generated (<span id="tabGeneratedCount">0</span>)</button>
+        </div>
+
+        <!-- Export, Batch & Delete Action Controls -->
+        <div class="action-group" style="flex-wrap: wrap;">
+          <button id="markBatchBtn" class="btn btn-success" disabled>
+            <span>✅</span> Mark Selected as Generated
+          </button>
+          
+          <button id="deleteBatchBtn" class="btn" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);" disabled>
+            <span>🗑️</span> Delete Selected
+          </button>
+
+          <button id="clearAllBtn" class="btn" style="background: rgba(239, 68, 68, 0.8); color: #fff;">
+            <span>⚠️</span> Clear All Prefilled Data
+          </button>
+
+          <button id="exportExcelBtn" class="btn btn-excel">
+            <span>📊</span> Export Excel (.xlsx)
+          </button>
+          
+          <button id="exportCsvBtn" class="btn btn-csv">
+            <span>📄</span> Export CSV (.csv)
+          </button>
+
+          <button id="exportZipBtn" class="btn" style="background: #7c3aed; color: #fff;">
+            <span>🖼️</span> Download Photos (.zip)
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Student Data Table -->
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;"><input type="checkbox" id="selectAllCheckbox"></th>
+              <th style="width: 60px;">Photo</th>
+              <th>Student Name & Father</th>
+              <th>Class</th>
+              <th>DOB</th>
+              <th>Contacts & Address</th>
+              <th>Status</th>
+              <th>Submitted At</th>
+              <th>Local Photo File Path</th>
+              <th style="width: 60px;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="studentTableBody">
+            <tr>
+              <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                Loading student records...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <footer>
+    ID Card Data & Batch Manager &bull; Delete & Clear Prefilled Data Options Active
+  </footer>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>

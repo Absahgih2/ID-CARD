@@ -56,6 +56,8 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from 'public' folder and root
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads/photos', express.static(uploadsDir));
 
@@ -80,9 +82,7 @@ app.get('/api/notifications/stream', (req, res) => {
   });
 });
 
-// --- API ENDPOINTS ---
-
-// 1. Get Students & Summary Stats
+// API Routes
 app.get('/api/students', (req, res) => {
   const db = readDB();
   const students = db.students || [];
@@ -100,7 +100,6 @@ app.get('/api/students', (req, res) => {
   });
 });
 
-// 2. Submit Student Registration Form
 app.post('/api/students/submit', upload.single('photo'), (req, res) => {
   try {
     const { studentName, className, dob, fatherName, contact1, contact2, contact3, address } = req.body;
@@ -160,7 +159,6 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
   }
 });
 
-// 3. Batch Status Update (e.g. mark as Generated)
 app.post('/api/students/batch-status', (req, res) => {
   const { ids, status } = req.body;
   if (!Array.isArray(ids) || !ids.length || !['Pending', 'Generated'].includes(status)) {
@@ -196,7 +194,6 @@ app.post('/api/students/batch-status', (req, res) => {
   });
 });
 
-// 4. Batch Delete Selected Students
 app.post('/api/students/batch-delete', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) {
@@ -208,7 +205,6 @@ app.post('/api/students/batch-delete', (req, res) => {
 
   db.students = db.students.filter(s => {
     if (ids.includes(s.id)) {
-      // Remove photo file
       const photoFile = path.join(uploadsDir, s.photoFilename);
       if (fs.existsSync(photoFile)) {
         try { fs.unlinkSync(photoFile); } catch (e) {}
@@ -226,11 +222,8 @@ app.post('/api/students/batch-delete', (req, res) => {
   res.json({ success: true, message: `Successfully deleted ${deletedCount} student record(s).` });
 });
 
-// 5. Clear ALL Data (Delete all prefilled demo data)
 app.post('/api/students/clear-all', (req, res) => {
   const db = readDB();
-  
-  // Delete all photos from uploads directory
   if (fs.existsSync(uploadsDir)) {
     const files = fs.readdirSync(uploadsDir);
     for (const file of files) {
@@ -242,12 +235,11 @@ app.post('/api/students/clear-all', (req, res) => {
   db.lastBatchTimestamp = null;
   writeDB(db);
 
-  broadcastSSE({ type: 'STATUS_UPDATED', message: 'All student data and photos cleared!' });
+  broadcastSSE({ type: 'STATUS_UPDATED', message: 'All student data cleared!' });
 
-  res.json({ success: true, message: 'All prefilled student data and photos have been deleted.' });
+  res.json({ success: true, message: 'All student data and photos cleared.' });
 });
 
-// 6. Delete Single Record
 app.delete('/api/students/:id', (req, res) => {
   const { id } = req.params;
   const db = readDB();
@@ -267,7 +259,6 @@ app.delete('/api/students/:id', (req, res) => {
   res.json({ success: true, message: 'Record deleted.' });
 });
 
-// 7. Download Excel (.xlsx) Format
 app.get('/api/export/excel', (req, res) => {
   const { status } = req.query;
   const db = readDB();
@@ -311,7 +302,6 @@ app.get('/api/export/excel', (req, res) => {
   return res.send(buffer);
 });
 
-// 8. Download CSV (.csv) Format
 app.get('/api/export/csv', (req, res) => {
   const { status } = req.query;
   const db = readDB();
@@ -347,14 +337,13 @@ app.get('/api/export/csv', (req, res) => {
   return res.send(csvContent);
 });
 
-// 9. Download All Student Photos as ZIP Archive (for Cloud Deployments)
 app.get('/api/export/photos-zip', async (req, res) => {
   try {
     const db = readDB();
     const students = db.students || [];
 
     if (!students.length) {
-      return res.status(400).json({ error: 'No student photos available to download.' });
+      return res.status(400).json({ error: 'No student photos available.' });
     }
 
     const zip = new JSZip();
@@ -367,14 +356,13 @@ app.get('/api/export/photos-zip', async (req, res) => {
         const cleanClass = (s.className || 'Class').replace(/[^a-zA-Z0-9_-]/g, '_');
         const cleanName = (s.studentName || 'Student').replace(/[^a-zA-Z0-9_-]/g, '_');
         const ext = path.extname(s.photoFilename) || '.jpg';
-        const zipFilename = `${cleanClass}/${cleanName}_${s.id}${ext}`;
-        zip.file(zipFilename, fileData);
+        zip.file(`${cleanClass}/${cleanName}_${s.id}${ext}`, fileData);
         fileCount++;
       }
     });
 
     if (fileCount === 0) {
-      return res.status(400).json({ error: 'No valid photo files found on server.' });
+      return res.status(400).json({ error: 'No photo files found.' });
     }
 
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
@@ -388,9 +376,28 @@ app.get('/api/export/photos-zip', async (req, res) => {
   }
 });
 
+// Serve HTML pages explicitly
+app.get('/admin*', (req, res) => {
+  const adminPath = path.join(__dirname, 'public', 'admin.html');
+  if (fs.existsSync(adminPath)) {
+    res.sendFile(adminPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+  }
+});
+
+app.get('*', (req, res) => {
+  const indexPath = path.join(__dirname, 'public', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'index.html'));
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`===================================================`);
-  console.log(`🚀 ID Card Data Collector Server running!`);
+  console.log(`🚀 ID Card Data Collector Server running on port ${PORT}!`);
   console.log(`📌 Public Student Form:  http://localhost:${PORT}/`);
   console.log(`📌 Admin Dashboard:       http://localhost:${PORT}/admin.html`);
   console.log(`📁 Local Photos Directory: ${uploadsDir}`);
