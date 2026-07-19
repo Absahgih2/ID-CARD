@@ -36,14 +36,16 @@ function writeDB(data) {
   fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// Multer Storage
+// Multer Storage - Custom Filename: <STUDENT_NAME>_<STUDENT_ID>.<ext>
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
     const sanitizeName = (req.body.studentName || 'STUDENT').toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
-    const sanitizeClass = (req.body.className || 'CLASS').toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
-    cb(null, `PHOTO_${sanitizeClass}_${sanitizeName}_${Date.now()}${ext}`);
+    const customId = `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    req.generatedStudentId = customId; // attach to request
+    req.generatedFilename = `${sanitizeName}_${customId}${ext}`;
+    cb(null, req.generatedFilename);
   }
 });
 
@@ -199,7 +201,7 @@ app.get('/api/students', (req, res) => {
   });
 });
 
-// Submit Form (Contact 1 Mandatory, Contact 2 Optional)
+// Submit Form (Strict Filename Matching for Excel Macro)
 app.post('/api/students/submit', upload.single('photo'), (req, res) => {
   try {
     const { studentName, className, dob, fatherName, contact1, contact2, address } = req.body;
@@ -209,12 +211,12 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
     }
 
     const db = readDB();
-    const photoFilename = req.file.filename;
+    const photoFilename = req.file.filename; // e.g., AASHISH_BAGH_STU-1784491882446-82.jpg
     const photoPath = `/uploads/photos/${photoFilename}`;
     const fullLocalPhotoPath = path.join(uploadsDir, photoFilename);
 
     const studentRecord = {
-      id: `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: req.generatedStudentId || `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       studentName: studentName.trim().toUpperCase(),
       className: className.trim().toUpperCase(),
       dob: dob.trim().toUpperCase(),
@@ -222,7 +224,7 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
       contact1: contact1.trim().toUpperCase(),
       contact2: contact2 ? contact2.trim().toUpperCase() : '',
       address: address.trim().toUpperCase(),
-      photoFilename,
+      photoFilename, // EXACT MATCH: AASHISH_BAGH_STU-1784491882446-82.jpg
       photoPath,
       localFolderLocation: fullLocalPhotoPath,
       status: 'Pending',
@@ -358,6 +360,7 @@ app.delete('/api/students/:id', (req, res) => {
   res.json({ success: true, message: 'Record deleted.' });
 });
 
+// Download Excel (.xlsx) - Photo File Name column matches ZIP exact filename!
 app.get('/api/export/excel', (req, res) => {
   const { status } = req.query;
   const db = readDB();
@@ -376,9 +379,9 @@ app.get('/api/export/excel', (req, res) => {
     'Contact 1 (Primary)': s.contact1,
     'Contact 2 (Optional)': s.contact2 || '',
     'Address': s.address,
+    'Photo File Name': s.photoFilename, // EXACT MATCH FOR MACRO (e.g. AASHISH_BAGH_STU-1784491882446-82.jpg)
     'Status': s.status,
     'Submission Time': new Date(s.submittedAt).toLocaleString(),
-    'Photo File Name': s.photoFilename,
     'Local Photo Path': s.localFolderLocation
   }));
 
@@ -388,8 +391,8 @@ app.get('/api/export/excel', (req, res) => {
 
   worksheet['!cols'] = [
     { wch: 6 },  { wch: 25 }, { wch: 12 }, { wch: 18 }, { wch: 25 },
-    { wch: 18 }, { wch: 18 }, { wch: 35 }, { wch: 14 },
-    { wch: 22 }, { wch: 35 }, { wch: 55 }
+    { wch: 18 }, { wch: 18 }, { wch: 35 }, { wch: 45 }, { wch: 14 },
+    { wch: 22 }, { wch: 55 }
   ];
 
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
@@ -400,6 +403,7 @@ app.get('/api/export/excel', (req, res) => {
   return res.send(buffer);
 });
 
+// Download CSV (.csv) - Photo File Name column matches ZIP exact filename!
 app.get('/api/export/csv', (req, res) => {
   const { status } = req.query;
   const db = readDB();
@@ -411,8 +415,8 @@ app.get('/api/export/csv', (req, res) => {
 
   const headers = [
     'S.No', 'Student Name', 'Class', 'Date of Birth', 'Father Name',
-    'Contact 1 (Primary)', 'Contact 2 (Optional)', 'Address', 'Status',
-    'Submission Time', 'Photo File Name', 'Local Photo Path'
+    'Contact 1 (Primary)', 'Contact 2 (Optional)', 'Address', 'Photo File Name', 'Status',
+    'Submission Time', 'Local Photo Path'
   ];
 
   const escapeCSV = (val) => {
@@ -423,8 +427,8 @@ app.get('/api/export/csv', (req, res) => {
 
   const rows = list.map((s, idx) => [
     idx + 1, s.studentName, s.className, s.dob, s.fatherName,
-    s.contact1, s.contact2 || '', s.address, s.status,
-    new Date(s.submittedAt).toLocaleString(), s.photoFilename, s.localFolderLocation
+    s.contact1, s.contact2 || '', s.address, s.photoFilename, s.status,
+    new Date(s.submittedAt).toLocaleString(), s.localFolderLocation
   ].map(escapeCSV).join(','));
 
   const csvContent = [headers.map(escapeCSV).join(','), ...rows].join('\n');
@@ -435,6 +439,7 @@ app.get('/api/export/csv', (req, res) => {
   return res.send(csvContent);
 });
 
+// Download All Student Photos as flat ZIP (Exact Filename Match for Excel Macro!)
 app.get('/api/export/photos-zip', async (req, res) => {
   try {
     const db = readDB();
@@ -451,10 +456,8 @@ app.get('/api/export/photos-zip', async (req, res) => {
       const photoFile = path.join(uploadsDir, s.photoFilename);
       if (fs.existsSync(photoFile)) {
         const fileData = fs.readFileSync(photoFile);
-        const cleanClass = (s.className || 'Class').replace(/[^a-zA-Z0-9_-]/g, '_');
-        const cleanName = (s.studentName || 'Student').replace(/[^a-zA-Z0-9_-]/g, '_');
-        const ext = path.extname(s.photoFilename) || '.jpg';
-        zip.file(`${cleanClass}/${cleanName}_${s.id}${ext}`, fileData);
+        // Save in root of ZIP as exact s.photoFilename (e.g. AASHISH_BAGH_STU-1784491882446-82.jpg)
+        zip.file(s.photoFilename, fileData);
         fileCount++;
       }
     });
