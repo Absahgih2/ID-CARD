@@ -35,7 +35,7 @@ function writeLocalDB(data) {
   fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// Helper to make HTTPS requests to Google Apps Script
+// Helper to make HTTPS requests to Google Apps Script (Handles redirects correctly)
 function makeRequest(url, method, payload = null) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
@@ -49,9 +49,9 @@ function makeRequest(url, method, payload = null) {
     };
 
     const req = https.request(options, (res) => {
-      // Handle redirect
+      // Handle redirect: Google Apps Script redirects a POST to a GET URL to fetch the result.
       if (res.statusCode === 302 || res.statusCode === 301 || res.statusCode === 307) {
-        return makeRequest(res.headers.location, method, payload).then(resolve).catch(reject);
+        return makeRequest(res.headers.location, 'GET', null).then(resolve).catch(reject);
       }
 
       let body = '';
@@ -67,7 +67,7 @@ function makeRequest(url, method, payload = null) {
 
     req.on('error', (err) => reject(err));
 
-    if (payload) {
+    if (payload && method === 'POST') {
       req.write(JSON.stringify(payload));
     }
     req.end();
