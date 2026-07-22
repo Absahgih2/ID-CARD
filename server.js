@@ -74,7 +74,7 @@ function makeRequest(url, method, payload = null) {
   });
 }
 
-// --- DATABASE & DRIVE SYNC HELPERS (Google Apps Script / Local) ---
+// --- DATABASE & DRIVE SYNC HELPERS ---
 
 async function syncDB() {
   if (APPS_SCRIPT_URL) {
@@ -222,9 +222,13 @@ app.get('/api/diagnostics/drive', async (req, res) => {
         folderId: testResult.folderId
       });
     } else {
+      const errorMsg = typeof testResult === 'object' 
+        ? (testResult.error || JSON.stringify(testResult)) 
+        : String(testResult).substring(0, 150);
+        
       res.status(500).json({
         success: false,
-        error: testResult.error || 'Connection failed.'
+        error: `Apps Script response error: ${errorMsg}`
       });
     }
   } catch (err) {
@@ -580,7 +584,6 @@ app.get('/api/export/csv', async (req, res) => {
   return res.send(csvContent);
 });
 
-// Download All Photos Zipped (Decodes base64 from Apps Script)
 app.get('/api/export/photos-zip', async (req, res) => {
   try {
     const db = await syncDB();
