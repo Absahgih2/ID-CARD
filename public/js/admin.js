@@ -60,6 +60,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const filterLateBtn = document.getElementById('filterLateBtn');
     const toastContainer = document.getElementById('toastContainer');
 
+    const driveStatusText = document.getElementById('driveStatusText');
+    const retestDriveBtn = document.getElementById('retestDriveBtn');
+
+    async function checkDriveConnection() {
+      if (!driveStatusText) return;
+      driveStatusText.textContent = 'Testing connection...';
+      driveStatusText.style.color = 'var(--text-muted)';
+      try {
+        const res = await fetch('/api/diagnostics/drive');
+        const data = await res.json();
+        if (data.success) {
+          driveStatusText.innerHTML = `✅ Connected to Google Drive folder: <strong style="color: #34d399;">${data.folderName}</strong>`;
+        } else {
+          driveStatusText.innerHTML = `❌ Connection Error: <span style="color: #f87171;">${data.error}</span>`;
+        }
+      } catch (err) {
+        driveStatusText.innerHTML = `❌ Network Error connecting to diagnostics endpoint.`;
+      }
+    }
+
+    if (retestDriveBtn) {
+      retestDriveBtn.addEventListener('click', checkDriveConnection);
+    }
+
     function playNotificationSound() {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -351,9 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
           selectedStudentIds.delete(id);
           loadData();
         }
-      } catch (err) {
-        alert('Error deleting student.');
-      }
+      } catch (err) {}
     };
 
     function connectSSE() {
@@ -381,6 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m]);
     }
 
+    checkDriveConnection();
     loadData();
     connectSSE();
   }

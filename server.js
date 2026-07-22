@@ -7,10 +7,12 @@ const XLSX = require('xlsx');
 const JSZip = require('jszip');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || 'printdigi001@gmail.com';
+const DRIVE_FOLDER_ID = '17P5FHKTADmXHrMC9KeoRCcbCjXh1xbYr';
 
 // Directories
 const dataDir = path.join(__dirname, 'data');
@@ -20,30 +22,206 @@ const dbFilePath = path.join(dataDir, 'students.json');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-if (!fs.existsSync(dbFilePath)) {
-  fs.writeFileSync(dbFilePath, JSON.stringify({ students: [], lastBatchTimestamp: null }, null, 2));
-}
+// --- GOOGLE DRIVE AUTHENTICATION ---
+let driveClient = null;
 
-function readDB() {
+function getDriveClient() {
+  if (driveClient) return driveClient;
+  
   try {
-    return JSON.parse(fs.readFileSync(dbFilePath, 'utf8'));
+    let authConfig;
+    if (process.env.GOOGLE_CREDS) {
+      authConfig = JSON.parse(process.env.GOOGLE_CREDS);
+    } else {
+      const keyPath = path.join(__dirname, 'google-key.json');
+      if (fs.existsSync(keyPath)) {
+        authConfig = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+      }
+    }
+
+    if (!authConfig) {
+      console.warn("⚠️ No Google Drive API credentials configured!");
+      return null;
+    }
+
+    const auth = new google.auth.JWT(
+      authConfig.client_email,
+      null,
+      authConfig.private_key,
+      ['https://www.googleapis.com/auth/drive']
+    );
+
+    driveClient = google.drive({ version: 'v3', auth });
+    return driveClient;
   } catch (err) {
-    return { students: [], lastBatchTimestamp: null };
+    console.error("❌ Error initializing Google Drive client:", err.message);
+    return null;
   }
 }
 
-function writeDB(data) {
+// --- GOOGLE DRIVE DATA PERSISTENCE HELPERS ---
+let dbFileId = null;
+
+function readLocalDB() {
+  try {
+    if (fs.existsSync(dbFilePath)) {
+      return JSON.parse(fs.readFileSync(dbFilePath, 'utf8'));
+    }
+  } catch (err) {}
+  return { students: [], lastBatchTimestamp: null };
+}
+
+function writeLocalDB(data) {
   fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-// Multer Storage - Custom Filename: <STUDENT_NAME>_<STUDENT_ID>.<ext>
+async function syncDBFromDrive() {
+  const drive = getDriveClient();
+  if (!drive) return readLocalDB();
+
+  try {
+    const res = await drive.files.list({
+      q: `name='students.json' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
+      fields: 'files(id, name)',
+      spaces: 'drive'
+    });
+
+    const files = res.data.files;
+    if (files && files.length > 0) {
+      dbFileId = files[0].id;
+      const fileContentRes = await drive.files.get({
+        fileId: dbFileId,
+        alt: 'media'
+      });
+      
+      const dbData = typeof fileContentRes.data === 'string' 
+        ? JSON.parse(fileContentRes.data) 
+        : fileContentRes.data;
+
+      writeLocalDB(dbData);
+      return dbData;
+    } else {
+      const initialData = { students: [], lastBatchTimestamp: null };
+      const media = {
+        mimeType: 'application/json',
+        body: JSON.stringify(initialData, null, 2)
+      };
+      const createRes = await drive.files.create({
+        requestBody: {
+          name: 'students.json',
+          parents: [DRIVE_FOLDER_ID]
+        },
+        media: media,
+        fields: 'id'
+      });
+      dbFileId = createRes.data.id;
+      writeLocalDB(initialData);
+      return initialData;
+    }
+  } catch (err) {
+    console.error("❌ Error syncing database from Google Drive:", err.message);
+    return readLocalDB();
+  }
+}
+
+async function uploadDBToDrive(dbData) {
+  writeLocalDB(dbData);
+
+  const drive = getDriveClient();
+  if (!drive) return;
+
+  try {
+    if (!dbFileId) {
+      const res = await drive.files.list({
+        q: `name='students.json' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
+        fields: 'files(id)'
+      });
+      if (res.data.files && res.data.files.length > 0) {
+        dbFileId = res.data.files[0].id;
+      }
+    }
+
+    const media = {
+      mimeType: 'application/json',
+      body: JSON.stringify(dbData, null, 2)
+    };
+
+    if (dbFileId) {
+      await drive.files.update({
+        fileId: dbFileId,
+        media: media
+      });
+    } else {
+      const createRes = await drive.files.create({
+        requestBody: {
+          name: 'students.json',
+          parents: [DRIVE_FOLDER_ID]
+        },
+        media: media,
+        fields: 'id'
+      });
+      dbFileId = createRes.data.id;
+    }
+    console.log("☁️ Database students.json saved on Google Drive.");
+  } catch (err) {
+    console.error("❌ Error uploading database to Google Drive:", err.message);
+  }
+}
+
+async function uploadPhotoToDrive(localPath, filename) {
+  const drive = getDriveClient();
+  if (!drive) return null;
+
+  try {
+    const media = {
+      mimeType: 'image/jpeg',
+      body: fs.createReadStream(localPath)
+    };
+
+    const res = await drive.files.create({
+      requestBody: {
+        name: filename,
+        parents: [DRIVE_FOLDER_ID]
+      },
+      media: media,
+      fields: 'id, webViewLink, webContentLink'
+    });
+
+    console.log(`☁️ Uploaded photo to Drive: ${filename} (ID: ${res.data.id})`);
+    
+    // Delete local temp file
+    try { fs.unlinkSync(localPath); } catch (e) {}
+
+    return {
+      id: res.data.id,
+      webViewLink: res.data.webViewLink,
+      webContentLink: res.data.webContentLink
+    };
+  } catch (err) {
+    console.error("❌ Error uploading photo to Google Drive:", err.message);
+    return null;
+  }
+}
+
+async function deleteFileFromDrive(fileId) {
+  const drive = getDriveClient();
+  if (!drive || !fileId) return;
+  try {
+    await drive.files.delete({ fileId: fileId });
+    console.log(`☁️ Deleted file from Google Drive (ID: ${fileId})`);
+  } catch (e) {
+    console.error(`❌ Error deleting file from Google Drive:`, e.message);
+  }
+}
+
+// Multer Storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
     const sanitizeName = (req.body.studentName || 'STUDENT').toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
     const customId = `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    req.generatedStudentId = customId; // attach to request
+    req.generatedStudentId = customId;
     req.generatedFilename = `${sanitizeName}_${customId}${ext}`;
     cb(null, req.generatedFilename);
   }
@@ -86,9 +264,40 @@ app.get('/api/notifications/stream', (req, res) => {
   });
 });
 
+// --- GOOGLE DRIVE DIAGNOSTICS ENDPOINT ---
+app.get('/api/diagnostics/drive', async (req, res) => {
+  const drive = getDriveClient();
+  if (!drive) {
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Google Drive client not initialized. Ensure GOOGLE_CREDS or google-key.json is configured.' 
+    });
+  }
+
+  try {
+    // 1. Test connection to the specific folder
+    const folderTest = await drive.files.get({
+      fileId: DRIVE_FOLDER_ID,
+      fields: 'id, name, permissions'
+    });
+
+    res.json({
+      success: true,
+      message: 'Successfully connected to Google Drive!',
+      folderName: folderTest.data.name,
+      folderId: folderTest.data.id
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: `Failed to access folder: ${err.message}. Make sure folder ID is correct and shared with the service account email.`
+    });
+  }
+});
+
 // --- DAILY 4:00 PM EMAIL SUMMARY ENGINE ---
 async function sendDailySummaryEmail() {
-  const db = readDB();
+  const db = await syncDBFromDrive();
   const students = db.students || [];
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -98,7 +307,6 @@ async function sendDailySummaryEmail() {
   });
 
   const count = todayStudents.length;
-
   console.log(`[Cron 4:00 PM] Daily email check: ${count} student submission(s) today.`);
 
   const classBreakdown = {};
@@ -168,8 +376,8 @@ async function sendDailySummaryEmail() {
       return { success: false, error: err.message };
     }
   } else {
-    console.log(`ℹ️ Email SMTP credentials not configured. Set EMAIL_USER & EMAIL_PASS in environment to deliver live emails to ${NOTIFY_EMAIL}.`);
-    return { success: true, message: `Report generated for ${count} student(s) today. Set EMAIL_USER & EMAIL_PASS for live SMTP delivery.` };
+    console.log(`ℹ️ Email SMTP credentials not configured. Set EMAIL_USER & EMAIL_PASS.`);
+    return { success: true, message: `Report generated for ${count} student(s) today.` };
   }
 }
 
@@ -184,8 +392,8 @@ app.post('/api/notifications/send-daily-email', async (req, res) => {
 });
 
 // API Routes
-app.get('/api/students', (req, res) => {
-  const db = readDB();
+app.get('/api/students', async (req, res) => {
+  const db = await syncDBFromDrive();
   const students = db.students || [];
 
   const total = students.length;
@@ -201,8 +409,7 @@ app.get('/api/students', (req, res) => {
   });
 });
 
-// Submit Form (Strict Filename Matching for Excel Macro)
-app.post('/api/students/submit', upload.single('photo'), (req, res) => {
+app.post('/api/students/submit', upload.single('photo'), async (req, res) => {
   try {
     const { studentName, className, dob, fatherName, contact1, contact2, address } = req.body;
 
@@ -210,10 +417,15 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
       return res.status(400).json({ error: 'Student Name, Class, DOB, Father Name, Primary Contact, Address, and Photo are mandatory!' });
     }
 
-    const db = readDB();
-    const photoFilename = req.file.filename; // e.g., AASHISH_BAGH_STU-1784491882446-82.jpg
-    const photoPath = `/uploads/photos/${photoFilename}`;
-    const fullLocalPhotoPath = path.join(uploadsDir, photoFilename);
+    const photoFilename = req.file.filename;
+    const tempLocalPath = req.file.path;
+
+    // Upload Photo to Google Drive
+    const drivePhoto = await uploadPhotoToDrive(tempLocalPath, photoFilename);
+    const driveFileId = drivePhoto ? drivePhoto.id : '';
+    const photoPath = drivePhoto ? drivePhoto.webViewLink : `/uploads/photos/${photoFilename}`;
+
+    const db = await syncDBFromDrive();
 
     const studentRecord = {
       id: req.generatedStudentId || `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -224,15 +436,15 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
       contact1: contact1.trim().toUpperCase(),
       contact2: contact2 ? contact2.trim().toUpperCase() : '',
       address: address.trim().toUpperCase(),
-      photoFilename, // EXACT MATCH: AASHISH_BAGH_STU-1784491882446-82.jpg
+      photoFilename,
       photoPath,
-      localFolderLocation: fullLocalPhotoPath,
+      driveFileId,
       status: 'Pending',
       submittedAt: new Date().toISOString()
     };
 
     db.students.push(studentRecord);
-    writeDB(db);
+    await uploadDBToDrive(db);
 
     const updatedPending = db.students.filter(s => s.status === 'Pending').length;
     const lastBatchTime = db.lastBatchTimestamp ? new Date(db.lastBatchTimestamp).getTime() : 0;
@@ -256,17 +468,18 @@ app.post('/api/students/submit', upload.single('photo'), (req, res) => {
       student: studentRecord
     });
   } catch (err) {
+    console.error("Submission Error:", err);
     return res.status(500).json({ error: 'Server error processing submission: ' + err.message });
   }
 });
 
-app.post('/api/students/batch-status', (req, res) => {
+app.post('/api/students/batch-status', async (req, res) => {
   const { ids, status } = req.body;
   if (!Array.isArray(ids) || !ids.length || !['Pending', 'Generated'].includes(status)) {
     return res.status(400).json({ error: 'Invalid batch parameters.' });
   }
 
-  const db = readDB();
+  const db = await syncDBFromDrive();
   let updatedCount = 0;
 
   db.students = db.students.map(s => {
@@ -279,7 +492,7 @@ app.post('/api/students/batch-status', (req, res) => {
 
   if (status === 'Generated') db.lastBatchTimestamp = new Date().toISOString();
 
-  writeDB(db);
+  await uploadDBToDrive(db);
 
   broadcastSSE({
     type: 'STATUS_UPDATED',
@@ -295,75 +508,64 @@ app.post('/api/students/batch-status', (req, res) => {
   });
 });
 
-app.post('/api/students/batch-delete', (req, res) => {
+app.post('/api/students/batch-delete', async (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) {
     return res.status(400).json({ error: 'Please select at least one student to delete.' });
   }
 
-  const db = readDB();
+  const db = await syncDBFromDrive();
   const initialCount = db.students.length;
 
-  db.students = db.students.filter(s => {
+  for (const s of db.students) {
     if (ids.includes(s.id)) {
-      const photoFile = path.join(uploadsDir, s.photoFilename);
-      if (fs.existsSync(photoFile)) {
-        try { fs.unlinkSync(photoFile); } catch (e) {}
-      }
-      return false;
+      if (s.driveFileId) await deleteFileFromDrive(s.driveFileId);
     }
-    return true;
-  });
+  }
 
-  const deletedCount = initialCount - db.students.length;
-  writeDB(db);
+  db.students = db.students.filter(s => !ids.includes(s.id));
+  await uploadDBToDrive(db);
 
-  broadcastSSE({ type: 'STATUS_UPDATED', message: `Deleted ${deletedCount} student record(s).` });
+  broadcastSSE({ type: 'STATUS_UPDATED', message: `Deleted ${initialCount - db.students.length} student record(s).` });
 
-  res.json({ success: true, message: `Successfully deleted ${deletedCount} student record(s).` });
+  res.json({ success: true, message: `Successfully deleted ${initialCount - db.students.length} student record(s).` });
 });
 
-app.post('/api/students/clear-all', (req, res) => {
-  const db = readDB();
-  if (fs.existsSync(uploadsDir)) {
-    const files = fs.readdirSync(uploadsDir);
-    for (const file of files) {
-      try { fs.unlinkSync(path.join(uploadsDir, file)); } catch (e) {}
-    }
+app.post('/api/students/clear-all', async (req, res) => {
+  const db = await syncDBFromDrive();
+  
+  for (const s of db.students) {
+    if (s.driveFileId) await deleteFileFromDrive(s.driveFileId);
   }
 
   db.students = [];
   db.lastBatchTimestamp = null;
-  writeDB(db);
+  await uploadDBToDrive(db);
 
   broadcastSSE({ type: 'STATUS_UPDATED', message: 'All student data cleared!' });
 
   res.json({ success: true, message: 'All student data and photos cleared.' });
 });
 
-app.delete('/api/students/:id', (req, res) => {
+app.delete('/api/students/:id', async (req, res) => {
   const { id } = req.params;
-  const db = readDB();
+  const db = await syncDBFromDrive();
   const index = db.students.findIndex(s => s.id === id);
 
   if (index === -1) return res.status(404).json({ error: 'Record not found.' });
 
   const student = db.students[index];
-  const photoFile = path.join(uploadsDir, student.photoFilename);
-  if (fs.existsSync(photoFile)) {
-    try { fs.unlinkSync(photoFile); } catch (e) {}
-  }
+  if (student.driveFileId) await deleteFileFromDrive(student.driveFileId);
 
   db.students.splice(index, 1);
-  writeDB(db);
+  await uploadDBToDrive(db);
 
   res.json({ success: true, message: 'Record deleted.' });
 });
 
-// Download Excel (.xlsx) - Photo File Name column matches ZIP exact filename!
-app.get('/api/export/excel', (req, res) => {
+app.get('/api/export/excel', async (req, res) => {
   const { status } = req.query;
-  const db = readDB();
+  const db = await syncDBFromDrive();
   let list = db.students || [];
 
   if (status && ['Pending', 'Generated'].includes(status)) {
@@ -379,10 +581,10 @@ app.get('/api/export/excel', (req, res) => {
     'Contact 1 (Primary)': s.contact1,
     'Contact 2 (Optional)': s.contact2 || '',
     'Address': s.address,
-    'Photo File Name': s.photoFilename, // EXACT MATCH FOR MACRO (e.g. AASHISH_BAGH_STU-1784491882446-82.jpg)
+    'Photo File Name': s.photoFilename,
     'Status': s.status,
     'Submission Time': new Date(s.submittedAt).toLocaleString(),
-    'Local Photo Path': s.localFolderLocation
+    'Google Drive Photo Link': s.photoPath
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(excelRows);
@@ -403,10 +605,9 @@ app.get('/api/export/excel', (req, res) => {
   return res.send(buffer);
 });
 
-// Download CSV (.csv) - Photo File Name column matches ZIP exact filename!
-app.get('/api/export/csv', (req, res) => {
+app.get('/api/export/csv', async (req, res) => {
   const { status } = req.query;
-  const db = readDB();
+  const db = await syncDBFromDrive();
   let list = db.students || [];
 
   if (status && ['Pending', 'Generated'].includes(status)) {
@@ -416,7 +617,7 @@ app.get('/api/export/csv', (req, res) => {
   const headers = [
     'S.No', 'Student Name', 'Class', 'Date of Birth', 'Father Name',
     'Contact 1 (Primary)', 'Contact 2 (Optional)', 'Address', 'Photo File Name', 'Status',
-    'Submission Time', 'Local Photo Path'
+    'Submission Time', 'Google Drive Photo Link'
   ];
 
   const escapeCSV = (val) => {
@@ -428,7 +629,7 @@ app.get('/api/export/csv', (req, res) => {
   const rows = list.map((s, idx) => [
     idx + 1, s.studentName, s.className, s.dob, s.fatherName,
     s.contact1, s.contact2 || '', s.address, s.photoFilename, s.status,
-    new Date(s.submittedAt).toLocaleString(), s.localFolderLocation
+    new Date(s.submittedAt).toLocaleString(), s.photoPath
   ].map(escapeCSV).join(','));
 
   const csvContent = [headers.map(escapeCSV).join(','), ...rows].join('\n');
@@ -439,10 +640,9 @@ app.get('/api/export/csv', (req, res) => {
   return res.send(csvContent);
 });
 
-// Download All Student Photos as flat ZIP (Exact Filename Match for Excel Macro!)
 app.get('/api/export/photos-zip', async (req, res) => {
   try {
-    const db = readDB();
+    const db = await syncDBFromDrive();
     const students = db.students || [];
 
     if (!students.length) {
@@ -450,17 +650,29 @@ app.get('/api/export/photos-zip', async (req, res) => {
     }
 
     const zip = new JSZip();
+    const drive = getDriveClient();
     let fileCount = 0;
 
-    students.forEach(s => {
-      const photoFile = path.join(uploadsDir, s.photoFilename);
-      if (fs.existsSync(photoFile)) {
-        const fileData = fs.readFileSync(photoFile);
-        // Save in root of ZIP as exact s.photoFilename (e.g. AASHISH_BAGH_STU-1784491882446-82.jpg)
-        zip.file(s.photoFilename, fileData);
-        fileCount++;
+    for (const s of students) {
+      if (drive && s.driveFileId) {
+        try {
+          const fileRes = await drive.files.get(
+            { fileId: s.driveFileId, alt: 'media' },
+            { responseType: 'arraybuffer' }
+          );
+          zip.file(s.photoFilename, Buffer.from(fileRes.data));
+          fileCount++;
+        } catch (err) {
+          console.error(`Error downloading photo from drive for ${s.studentName}:`, err.message);
+        }
+      } else {
+        const photoFile = path.join(uploadsDir, s.photoFilename);
+        if (fs.existsSync(photoFile)) {
+          zip.file(s.photoFilename, fs.readFileSync(photoFile));
+          fileCount++;
+        }
       }
-    });
+    }
 
     if (fileCount === 0) {
       return res.status(400).json({ error: 'No photo files found.' });
@@ -477,7 +689,7 @@ app.get('/api/export/photos-zip', async (req, res) => {
   }
 });
 
-// Explicit HTML Page Fallbacks
+// Page Fallbacks
 app.get('/admin*', (req, res) => {
   const adminPath = path.join(__dirname, 'public', 'admin.html');
   if (fs.existsSync(adminPath)) res.sendFile(adminPath);
@@ -493,8 +705,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`===================================================`);
   console.log(`🚀 ID Card Data Collector Server running on port ${PORT}!`);
-  console.log(`📧 Daily 4:00 PM Email Alert recipient: ${NOTIFY_EMAIL}`);
-  console.log(`📌 Public Student Form:  http://localhost:${PORT}/`);
-  console.log(`📌 Admin Dashboard:       http://localhost:${PORT}/admin.html`);
+  console.log(`☁️ Google Drive Sync Active on Folder ID: ${DRIVE_FOLDER_ID}`);
   console.log(`===================================================`);
 });

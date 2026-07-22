@@ -21,6 +21,7 @@
 </head>
 <body>
 
+  <!-- Admin Password Login Modal -->
   <div id="loginModal" class="login-modal">
     <div class="login-box">
       <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔒</div>
@@ -40,6 +41,7 @@
     </div>
   </div>
 
+  <!-- Admin Dashboard Navigation Bar -->
   <nav class="navbar">
     <div class="brand">
       <span>🪪</span> Admin Dashboard & Data Manager
@@ -51,8 +53,20 @@
     </div>
   </nav>
 
+  <!-- Container -->
   <main class="container" id="adminContent" style="display: none;">
 
+    <!-- Google Drive Diagnostics Status Bar -->
+    <div id="diagnosticsBar" style="background: rgba(15,23,42,0.5); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.8rem 1.2rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span>☁️</span>
+        <strong>Google Drive Connection Status:</strong>
+        <span id="driveStatusText" style="color: var(--text-muted);">Testing connection...</span>
+      </div>
+      <button id="retestDriveBtn" class="btn" style="background: rgba(255,255,255,0.08); color: var(--text-main); padding: 0.3rem 0.6rem; font-size: 0.75rem;">Retest Connection</button>
+    </div>
+
+    <!-- Daily Email Banner -->
     <div style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 10px; padding: 0.9rem 1.2rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
       <div style="display: flex; align-items: center; gap: 10px; color: #a5b4fc; font-size: 0.9rem; font-weight: 500;">
         <span style="font-size: 1.4rem;">📧</span>
@@ -63,6 +77,7 @@
       </button>
     </div>
 
+    <!-- Late Submissions Alert Banner -->
     <div id="lateBanner" class="notification-banner" style="display: none;">
       <div class="banner-text">
         <span style="font-size: 1.5rem;">🔔</span>
@@ -73,6 +88,7 @@
       </button>
     </div>
 
+    <!-- Metrics Stats Grid -->
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon total">👥</div>
@@ -107,16 +123,20 @@
       </div>
     </div>
 
+    <!-- Main Glass Card Table Container -->
     <div class="glass-card">
 
+      <!-- Table Toolbar -->
       <div class="toolbar">
 
+        <!-- Status Filter Tabs -->
         <div class="tab-group">
           <button class="tab-btn active" data-filter="All">All Students</button>
           <button class="tab-btn" data-filter="Pending">Pending (<span id="tabPendingCount">0</span>)</button>
           <button class="tab-btn" data-filter="Generated">Generated (<span id="tabGeneratedCount">0</span>)</button>
         </div>
 
+        <!-- Export, Batch & Delete Action Controls -->
         <div class="action-group" style="flex-wrap: wrap;">
           <button id="markBatchBtn" class="btn btn-success" disabled>
             <span>✅</span> Mark Selected as Generated
@@ -145,6 +165,7 @@
 
       </div>
 
+      <!-- Student Data Table -->
       <div class="table-responsive">
         <table>
           <thead>
