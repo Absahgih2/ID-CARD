@@ -7,12 +7,12 @@ const XLSX = require('xlsx');
 const JSZip = require('jszip');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
-const { google } = require('googleapis');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || 'printdigi001@gmail.com';
-const DRIVE_FOLDER_ID = '17P5FHKTADmXHrMC9KeoRCcbCjXh1xbYr';
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 // Directories
 const dataDir = path.join(__dirname, 'data');
@@ -21,46 +21,6 @@ const dbFilePath = path.join(dataDir, 'students.json');
 
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-// --- GOOGLE DRIVE AUTHENTICATION ---
-let driveClient = null;
-
-function getDriveClient() {
-  if (driveClient) return driveClient;
-  
-  try {
-    let authConfig;
-    if (process.env.GOOGLE_CREDS) {
-      authConfig = JSON.parse(process.env.GOOGLE_CREDS);
-    } else {
-      const keyPath = path.join(__dirname, 'google-key.json');
-      if (fs.existsSync(keyPath)) {
-        authConfig = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      }
-    }
-
-    if (!authConfig) {
-      console.warn("⚠️ No Google Drive API credentials configured!");
-      return null;
-    }
-
-    const auth = new google.auth.JWT(
-      authConfig.client_email,
-      null,
-      authConfig.private_key,
-      ['https://www.googleapis.com/auth/drive']
-    );
-
-    driveClient = google.drive({ version: 'v3', auth });
-    return driveClient;
-  } catch (err) {
-    console.error("❌ Error initializing Google Drive client:", err.message);
-    return null;
-  }
-}
-
-// --- GOOGLE DRIVE DATA PERSISTENCE HELPERS ---
-let dbFileId = null;
 
 function readLocalDB() {
   try {
@@ -75,142 +35,117 @@ function writeLocalDB(data) {
   fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
-async function syncDBFromDrive() {
-  const drive = getDriveClient();
-  if (!drive) return readLocalDB();
-
-  try {
-    const res = await drive.files.list({
-      q: `name='students.json' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
-      fields: 'files(id, name)',
-      spaces: 'drive'
-    });
-
-    const files = res.data.files;
-    if (files && files.length > 0) {
-      dbFileId = files[0].id;
-      const fileContentRes = await drive.files.get({
-        fileId: dbFileId,
-        alt: 'media'
-      });
-      
-      const dbData = typeof fileContentRes.data === 'string' 
-        ? JSON.parse(fileContentRes.data) 
-        : fileContentRes.data;
-
-      writeLocalDB(dbData);
-      return dbData;
-    } else {
-      const initialData = { students: [], lastBatchTimestamp: null };
-      const media = {
-        mimeType: 'application/json',
-        body: JSON.stringify(initialData, null, 2)
-      };
-      const createRes = await drive.files.create({
-        requestBody: {
-          name: 'students.json',
-          parents: [DRIVE_FOLDER_ID]
-        },
-        media: media,
-        fields: 'id'
-      });
-      dbFileId = createRes.data.id;
-      writeLocalDB(initialData);
-      return initialData;
-    }
-  } catch (err) {
-    console.error("❌ Error syncing database from Google Drive:", err.message);
-    return readLocalDB();
-  }
-}
-
-async function uploadDBToDrive(dbData) {
-  writeLocalDB(dbData);
-
-  const drive = getDriveClient();
-  if (!drive) return;
-
-  try {
-    if (!dbFileId) {
-      const res = await drive.files.list({
-        q: `name='students.json' and '${DRIVE_FOLDER_ID}' in parents and trashed=false`,
-        fields: 'files(id)'
-      });
-      if (res.data.files && res.data.files.length > 0) {
-        dbFileId = res.data.files[0].id;
+// Helper to make HTTPS requests to Google Apps Script
+function makeRequest(url, method, payload = null) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json'
       }
-    }
-
-    const media = {
-      mimeType: 'application/json',
-      body: JSON.stringify(dbData, null, 2)
     };
 
-    if (dbFileId) {
-      await drive.files.update({
-        fileId: dbFileId,
-        media: media
+    const req = https.request(options, (res) => {
+      // Handle redirect
+      if (res.statusCode === 302 || res.statusCode === 301 || res.statusCode === 307) {
+        return makeRequest(res.headers.location, method, payload).then(resolve).catch(reject);
+      }
+
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          resolve(body);
+        }
       });
-    } else {
-      const createRes = await drive.files.create({
-        requestBody: {
-          name: 'students.json',
-          parents: [DRIVE_FOLDER_ID]
-        },
-        media: media,
-        fields: 'id'
-      });
-      dbFileId = createRes.data.id;
-    }
-    console.log("☁️ Database students.json saved on Google Drive.");
-  } catch (err) {
-    console.error("❌ Error uploading database to Google Drive:", err.message);
-  }
-}
-
-async function uploadPhotoToDrive(localPath, filename) {
-  const drive = getDriveClient();
-  if (!drive) return null;
-
-  try {
-    const media = {
-      mimeType: 'image/jpeg',
-      body: fs.createReadStream(localPath)
-    };
-
-    const res = await drive.files.create({
-      requestBody: {
-        name: filename,
-        parents: [DRIVE_FOLDER_ID]
-      },
-      media: media,
-      fields: 'id, webViewLink, webContentLink'
     });
 
-    console.log(`☁️ Uploaded photo to Drive: ${filename} (ID: ${res.data.id})`);
-    
-    // Delete local temp file
-    try { fs.unlinkSync(localPath); } catch (e) {}
+    req.on('error', (err) => reject(err));
 
-    return {
-      id: res.data.id,
-      webViewLink: res.data.webViewLink,
-      webContentLink: res.data.webContentLink
-    };
-  } catch (err) {
-    console.error("❌ Error uploading photo to Google Drive:", err.message);
-    return null;
+    if (payload) {
+      req.write(JSON.stringify(payload));
+    }
+    req.end();
+  });
+}
+
+// --- DATABASE & DRIVE SYNC HELPERS (Google Apps Script / Local) ---
+
+async function syncDB() {
+  if (APPS_SCRIPT_URL) {
+    try {
+      const db = await makeRequest(APPS_SCRIPT_URL, 'GET');
+      if (db && Array.isArray(db.students)) {
+        writeLocalDB(db);
+        return db;
+      }
+    } catch (err) {
+      console.error("❌ Google Apps Script DB read error, using local database cache:", err.message);
+    }
+  }
+  return readLocalDB();
+}
+
+async function saveDB(dbData) {
+  writeLocalDB(dbData);
+  if (APPS_SCRIPT_URL) {
+    try {
+      await makeRequest(APPS_SCRIPT_URL, 'POST', {
+        action: 'save_db',
+        db: dbData
+      });
+      console.log("☁️ Database updated on Google Drive via Apps Script.");
+    } catch (err) {
+      console.error("❌ Google Apps Script DB write error:", err.message);
+    }
   }
 }
 
-async function deleteFileFromDrive(fileId) {
-  const drive = getDriveClient();
-  if (!drive || !fileId) return;
-  try {
-    await drive.files.delete({ fileId: fileId });
-    console.log(`☁️ Deleted file from Google Drive (ID: ${fileId})`);
-  } catch (e) {
-    console.error(`❌ Error deleting file from Google Drive:`, e.message);
+async function uploadPhoto(localPath, filename) {
+  if (APPS_SCRIPT_URL) {
+    try {
+      const fileBuffer = fs.readFileSync(localPath);
+      const base64File = fileBuffer.toString('base64');
+      const ext = path.extname(localPath).toLowerCase();
+      const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+
+      const uploadResult = await makeRequest(APPS_SCRIPT_URL, 'POST', {
+        action: 'upload_photo',
+        filename: filename,
+        mimeType: mimeType,
+        base64: base64File
+      });
+
+      if (uploadResult && uploadResult.success) {
+        console.log(`☁️ Uploaded photo to Google Drive: ${filename}`);
+        try { fs.unlinkSync(localPath); } catch (e) {}
+        return uploadResult;
+      } else {
+        console.error("❌ Google Apps Script upload failed:", uploadResult.error);
+      }
+    } catch (err) {
+      console.error("❌ Photo upload to Apps Script failed:", err.message);
+    }
+  }
+  return null;
+}
+
+async function deletePhoto(fileId) {
+  if (APPS_SCRIPT_URL && fileId) {
+    try {
+      await makeRequest(APPS_SCRIPT_URL, 'POST', {
+        action: 'delete_file',
+        fileId: fileId
+      });
+      console.log(`☁️ Deleted file from Google Drive via Apps Script: ${fileId}`);
+    } catch (e) {
+      console.error("❌ Delete photo from Apps Script failed:", e.message);
+    }
   }
 }
 
@@ -264,66 +199,45 @@ app.get('/api/notifications/stream', (req, res) => {
   });
 });
 
-// --- GOOGLE DRIVE DIAGNOSTICS ENDPOINT (Checks Read AND Write Access) ---
+// --- GOOGLE DRIVE DIAGNOSTICS ENDPOINT ---
 app.get('/api/diagnostics/drive', async (req, res) => {
-  const drive = getDriveClient();
-  if (!drive) {
-    return res.status(500).json({ 
-      success: false, 
-      error: 'Google Drive client not initialized. Ensure GOOGLE_CREDS is configured.' 
+  if (!APPS_SCRIPT_URL) {
+    return res.json({ 
+      success: true, 
+      folderName: 'Local Server Cache (E:\\Coding\\ID Card Generation\\data)',
+      folderId: 'Local Disk'
     });
   }
 
   try {
-    // 1. Get Folder Metadata
-    const folderTest = await drive.files.get({
-      fileId: DRIVE_FOLDER_ID,
-      fields: 'id, name'
+    const testResult = await makeRequest(APPS_SCRIPT_URL, 'POST', {
+      action: 'diagnostics'
     });
 
-    // 2. Perform Write Permission Test (Create a small dummy file)
-    let testFileId = null;
-    try {
-      const media = {
-        mimeType: 'text/plain',
-        body: 'Connection write verification test.'
-      };
-      const testFile = await drive.files.create({
-        requestBody: {
-          name: `connection_write_test_${Date.now()}.txt`,
-          parents: [DRIVE_FOLDER_ID]
-        },
-        media: media,
-        fields: 'id'
+    if (testResult && testResult.success) {
+      res.json({
+        success: true,
+        message: 'Connected to Google Drive with full Read/Write permissions!',
+        folderName: testResult.folderName,
+        folderId: testResult.folderId
       });
-      testFileId = testFile.data.id;
-
-      // Delete the dummy file immediately
-      await drive.files.delete({ fileId: testFileId });
-    } catch (writeErr) {
-      return res.status(500).json({
+    } else {
+      res.status(500).json({
         success: false,
-        error: `FOLDER DETECTED, BUT NO WRITE PERMISSION: ${writeErr.message}. Make sure the service account email is shared with Google Drive folder as EDITOR.`
+        error: testResult.error || 'Connection failed.'
       });
     }
-
-    res.json({
-      success: true,
-      message: 'Successfully connected to Google Drive with Read/Write Access!',
-      folderName: folderTest.data.name,
-      folderId: folderTest.data.id
-    });
   } catch (err) {
     res.status(500).json({
       success: false,
-      error: `Failed to access folder: ${err.message}. Make sure the Folder ID is correct and shared with the service account email.`
+      error: `Failed to connect to Google Apps Script Web App: ${err.message}`
     });
   }
 });
 
 // --- DAILY 4:00 PM EMAIL SUMMARY ENGINE ---
 async function sendDailySummaryEmail() {
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   const students = db.students || [];
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -419,7 +333,7 @@ app.post('/api/notifications/send-daily-email', async (req, res) => {
 
 // API Routes
 app.get('/api/students', async (req, res) => {
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   const students = db.students || [];
 
   const total = students.length;
@@ -446,12 +360,12 @@ app.post('/api/students/submit', upload.single('photo'), async (req, res) => {
     const photoFilename = req.file.filename;
     const tempLocalPath = req.file.path;
 
-    // Upload Photo to Google Drive
-    const drivePhoto = await uploadPhotoToDrive(tempLocalPath, photoFilename);
-    const driveFileId = drivePhoto ? drivePhoto.id : '';
+    // Upload photo to Google Drive (via Apps Script)
+    const drivePhoto = await uploadPhoto(tempLocalPath, photoFilename);
+    const driveFileId = drivePhoto ? drivePhoto.fileId : '';
     const photoPath = drivePhoto ? drivePhoto.webViewLink : `/uploads/photos/${photoFilename}`;
 
-    const db = await syncDBFromDrive();
+    const db = await syncDB();
 
     const studentRecord = {
       id: req.generatedStudentId || `STU-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -470,7 +384,7 @@ app.post('/api/students/submit', upload.single('photo'), async (req, res) => {
     };
 
     db.students.push(studentRecord);
-    await uploadDBToDrive(db);
+    await saveDB(db);
 
     const updatedPending = db.students.filter(s => s.status === 'Pending').length;
     const lastBatchTime = db.lastBatchTimestamp ? new Date(db.lastBatchTimestamp).getTime() : 0;
@@ -505,7 +419,7 @@ app.post('/api/students/batch-status', async (req, res) => {
     return res.status(400).json({ error: 'Invalid batch parameters.' });
   }
 
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   let updatedCount = 0;
 
   db.students = db.students.map(s => {
@@ -518,7 +432,7 @@ app.post('/api/students/batch-status', async (req, res) => {
 
   if (status === 'Generated') db.lastBatchTimestamp = new Date().toISOString();
 
-  await uploadDBToDrive(db);
+  await saveDB(db);
 
   broadcastSSE({
     type: 'STATUS_UPDATED',
@@ -540,17 +454,17 @@ app.post('/api/students/batch-delete', async (req, res) => {
     return res.status(400).json({ error: 'Please select at least one student to delete.' });
   }
 
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   const initialCount = db.students.length;
 
   for (const s of db.students) {
     if (ids.includes(s.id)) {
-      if (s.driveFileId) await deleteFileFromDrive(s.driveFileId);
+      if (s.driveFileId) await deletePhoto(s.driveFileId);
     }
   }
 
   db.students = db.students.filter(s => !ids.includes(s.id));
-  await uploadDBToDrive(db);
+  await saveDB(db);
 
   broadcastSSE({ type: 'STATUS_UPDATED', message: `Deleted ${initialCount - db.students.length} student record(s).` });
 
@@ -558,15 +472,15 @@ app.post('/api/students/batch-delete', async (req, res) => {
 });
 
 app.post('/api/students/clear-all', async (req, res) => {
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   
   for (const s of db.students) {
-    if (s.driveFileId) await deleteFileFromDrive(s.driveFileId);
+    if (s.driveFileId) await deletePhoto(s.driveFileId);
   }
 
   db.students = [];
   db.lastBatchTimestamp = null;
-  await uploadDBToDrive(db);
+  await saveDB(db);
 
   broadcastSSE({ type: 'STATUS_UPDATED', message: 'All student data cleared!' });
 
@@ -575,23 +489,23 @@ app.post('/api/students/clear-all', async (req, res) => {
 
 app.delete('/api/students/:id', async (req, res) => {
   const { id } = req.params;
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   const index = db.students.findIndex(s => s.id === id);
 
   if (index === -1) return res.status(404).json({ error: 'Record not found.' });
 
   const student = db.students[index];
-  if (student.driveFileId) await deleteFileFromDrive(student.driveFileId);
+  if (student.driveFileId) await deletePhoto(student.driveFileId);
 
   db.students.splice(index, 1);
-  await uploadDBToDrive(db);
+  await saveDB(db);
 
   res.json({ success: true, message: 'Record deleted.' });
 });
 
 app.get('/api/export/excel', async (req, res) => {
   const { status } = req.query;
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   let list = db.students || [];
 
   if (status && ['Pending', 'Generated'].includes(status)) {
@@ -633,7 +547,7 @@ app.get('/api/export/excel', async (req, res) => {
 
 app.get('/api/export/csv', async (req, res) => {
   const { status } = req.query;
-  const db = await syncDBFromDrive();
+  const db = await syncDB();
   let list = db.students || [];
 
   if (status && ['Pending', 'Generated'].includes(status)) {
@@ -666,9 +580,10 @@ app.get('/api/export/csv', async (req, res) => {
   return res.send(csvContent);
 });
 
+// Download All Photos Zipped (Decodes base64 from Apps Script)
 app.get('/api/export/photos-zip', async (req, res) => {
   try {
-    const db = await syncDBFromDrive();
+    const db = await syncDB();
     const students = db.students || [];
 
     if (!students.length) {
@@ -676,18 +591,19 @@ app.get('/api/export/photos-zip', async (req, res) => {
     }
 
     const zip = new JSZip();
-    const drive = getDriveClient();
     let fileCount = 0;
 
     for (const s of students) {
-      if (drive && s.driveFileId) {
+      if (APPS_SCRIPT_URL && s.driveFileId) {
         try {
-          const fileRes = await drive.files.get(
-            { fileId: s.driveFileId, alt: 'media' },
-            { responseType: 'arraybuffer' }
-          );
-          zip.file(s.photoFilename, Buffer.from(fileRes.data));
-          fileCount++;
+          const downloadUrl = `${APPS_SCRIPT_URL}?action=get_file&fileId=${s.driveFileId}`;
+          const base64Data = await makeRequest(downloadUrl, 'GET');
+          
+          if (base64Data && typeof base64Data === 'string' && !base64Data.startsWith('{')) {
+            const photoBuffer = Buffer.from(base64Data, 'base64');
+            zip.file(s.photoFilename, photoBuffer);
+            fileCount++;
+          }
         } catch (err) {
           console.error(`Error downloading photo from drive for ${s.studentName}:`, err.message);
         }
@@ -731,6 +647,10 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`===================================================`);
   console.log(`🚀 ID Card Data Collector Server running on port ${PORT}!`);
-  console.log(`☁️ Google Drive Sync Active on Folder ID: ${DRIVE_FOLDER_ID}`);
+  if (APPS_SCRIPT_URL) {
+    console.log(`☁️ Google Apps Script Integration Active!`);
+  } else {
+    console.log(`💻 running in Local Storage mode.`);
+  }
   console.log(`===================================================`);
 });
