@@ -264,33 +264,59 @@ app.get('/api/notifications/stream', (req, res) => {
   });
 });
 
-// --- GOOGLE DRIVE DIAGNOSTICS ENDPOINT ---
+// --- GOOGLE DRIVE DIAGNOSTICS ENDPOINT (Checks Read AND Write Access) ---
 app.get('/api/diagnostics/drive', async (req, res) => {
   const drive = getDriveClient();
   if (!drive) {
     return res.status(500).json({ 
       success: false, 
-      error: 'Google Drive client not initialized. Ensure GOOGLE_CREDS or google-key.json is configured.' 
+      error: 'Google Drive client not initialized. Ensure GOOGLE_CREDS is configured.' 
     });
   }
 
   try {
-    // 1. Test connection to the specific folder
+    // 1. Get Folder Metadata
     const folderTest = await drive.files.get({
       fileId: DRIVE_FOLDER_ID,
-      fields: 'id, name, permissions'
+      fields: 'id, name'
     });
+
+    // 2. Perform Write Permission Test (Create a small dummy file)
+    let testFileId = null;
+    try {
+      const media = {
+        mimeType: 'text/plain',
+        body: 'Connection write verification test.'
+      };
+      const testFile = await drive.files.create({
+        requestBody: {
+          name: `connection_write_test_${Date.now()}.txt`,
+          parents: [DRIVE_FOLDER_ID]
+        },
+        media: media,
+        fields: 'id'
+      });
+      testFileId = testFile.data.id;
+
+      // Delete the dummy file immediately
+      await drive.files.delete({ fileId: testFileId });
+    } catch (writeErr) {
+      return res.status(500).json({
+        success: false,
+        error: `FOLDER DETECTED, BUT NO WRITE PERMISSION: ${writeErr.message}. Make sure the service account email is shared with Google Drive folder as EDITOR.`
+      });
+    }
 
     res.json({
       success: true,
-      message: 'Successfully connected to Google Drive!',
+      message: 'Successfully connected to Google Drive with Read/Write Access!',
       folderName: folderTest.data.name,
       folderId: folderTest.data.id
     });
   } catch (err) {
     res.status(500).json({
       success: false,
-      error: `Failed to access folder: ${err.message}. Make sure folder ID is correct and shared with the service account email.`
+      error: `Failed to access folder: ${err.message}. Make sure the Folder ID is correct and shared with the service account email.`
     });
   }
 });
